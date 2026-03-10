@@ -1,0 +1,20 @@
+{
+	"name": "companion-module-stagedisplay-cec",
+	"version": "1.0.0",
+	"main": "src/main.js",
+	"scripts": {
+		"package": "companion-module-build"
+	},
+	"license": "MIT",
+	"engines": {
+		"node": "^22.20",
+		"yarn": "^4"
+	},
+	"dependencies": {
+		"@companion-module/base": "~1.14.1"
+	},
+	"devDependencies": {
+		"@companion-module/tools": "^2.6.1"
+	},
+	"packageManager": "yarn@4.12.0"
+}
