@@ -6,8 +6,8 @@
 	"description": "Wake and sleep an LG display via HDMI-CEC through a Raspberry Pi HTTP bridge",
 	"version": "1.0.0",
 	"license": "MIT",
-	"repository": "",
-	"bugs": "",
+	"repository": "https://github.com/benjahj/Cec-wake-tv",
+	"bugs": "https://github.com/benjahj/Cec-wake-tv/issues",
 	"maintainers": [
 		{
 			"name": "Stage Display",
