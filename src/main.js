@@ -41,7 +41,7 @@ class ModuleInstance extends InstanceBase {
 				id: 'host',
 				label: 'Raspberry Pi IP / Hostname',
 				width: 8,
-				default: '10.0.1.44',
+				default: '',
 			},
 			{
 				type: 'number',
@@ -60,7 +60,7 @@ class ModuleInstance extends InstanceBase {
 	// -------------------------------------------------------------------------
 
 	_baseUrl() {
-		const host = this.config?.host || '10.0.1.44'
+		const host = this.config?.host || ''
 		const port = this.config?.port || 5000
 		return `http://${host}:${port}`
 	}

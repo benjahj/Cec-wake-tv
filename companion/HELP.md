@@ -1,6 +1,6 @@
 # Stage Display CEC
 
-Controls an **LG display** via **HDMI-CEC** through a Raspberry Pi HTTP bridge running the `stage-display-cec` Flask service.
+Controls a display via **HDMI-CEC** through a Raspberry Pi HTTP bridge running the `stage-display-cec` Flask service. Supports power control, HDMI input switching, and volume control.
 
 For full setup instructions including the Raspberry Pi service code, see the [README on GitHub](https://github.com/benjahj/Cec-wake-tv).
 
@@ -8,8 +8,8 @@ For full setup instructions including the Raspberry Pi service code, see the [RE
 
 ## Prerequisites
 
-1. Raspberry Pi powered on and connected to the LG display via HDMI.
-2. **SimpLink (CEC)** enabled in the LG display settings menu.
+1. Raspberry Pi powered on and connected to the display via HDMI.
+2. **CEC** enabled in the display settings menu (often called SimpLink, Anynet+, BRAVIA Sync, etc.).
 3. The `stage-display-cec` Flask service running on the Pi (auto-starts on boot via systemd).
 
 ---
@@ -18,17 +18,33 @@ For full setup instructions including the Raspberry Pi service code, see the [RE
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| Host | `10.0.1.44` | IP address or hostname of the Raspberry Pi |
+| Host | *(required)* | IP address or hostname of the Raspberry Pi |
 | Port | `5000` | Port the Flask service listens on |
 
 ---
 
 ## Actions
 
+### Power
+
 | Action | Description |
 |--------|-------------|
-| **Display On** | Sends a CEC `on 0` command — wakes the LG display |
-| **Display Off** | Sends a CEC `standby 0` command — puts the LG display into standby |
+| **Display On** | Sends a CEC `on 0` command — wakes the display |
+| **Display Off** | Sends a CEC `standby 0` command — puts the display into standby |
+
+### HDMI Input
+
+| Action | Options | Description |
+|--------|---------|-------------|
+| **Set HDMI Input** | HDMI 1–4 | Broadcasts a CEC Active Source message to switch the TV to the selected input |
+
+### Volume
+
+| Action | Description |
+|--------|-------------|
+| **Volume Up** | Increases TV volume by one step via CEC |
+| **Volume Down** | Decreases TV volume by one step via CEC |
+| **Volume Mute / Unmute** | Toggles mute on the TV via CEC |
 
 After each action the module immediately re-polls the display status so feedbacks and variables update without delay.
 
