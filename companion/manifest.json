@@ -4,7 +4,7 @@
 	"name": "Stage Display CEC",
 	"shortname": "StageCEC",
 	"description": "Control a display via HDMI-CEC through a Raspberry Pi HTTP bridge (power, input switching, volume)",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"license": "MIT",
 	"repository": "https://github.com/benjahj/Cec-wake-tv",
 	"bugs": "https://github.com/benjahj/Cec-wake-tv/issues",

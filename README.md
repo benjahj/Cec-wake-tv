@@ -126,184 +126,13 @@ mkdir -p /home/stage-display/stage-display-cec
 nano /home/stage-display/stage-display-cec/app.py
 ```
 
-Paste the complete `app.py` below:
+Copy `app.py` from this repository to the Pi (e.g. via `scp` or `git pull`):
 
-```python
-"""
-stage-display-cec  —  HDMI-CEC HTTP bridge
-==========================================
-Translates HTTP REST calls into cec-client (HDMI-CEC) commands.
-
-Endpoints
----------
-POST /display/on              Wake the display (CEC: on 0)
-POST /display/off             Standby the display (CEC: standby 0)
-GET  /display/status          Query power state (CEC: pow 0)
-POST /display/input/<1-4>     Switch HDMI input (CEC: Active Source tx)
-POST /display/volume/up       Volume up (CEC: volup)
-POST /display/volume/down     Volume down (CEC: voldown)
-POST /display/volume/mute     Toggle mute (CEC: mute)
-
-All responses are JSON.  Success shape: {"success": true, ...}
-                          Error shape:   {"success": false, "error": "..."}
-"""
-
-import subprocess
-from flask import Flask, jsonify
-
-app = Flask(__name__)
-
-# ---------------------------------------------------------------------------
-# HDMI physical addresses for CEC Active Source (opcode 0x82)
-# Format used in the CEC tx command:  1F:82:<high byte>:<low byte>
-# HDMI 1 → 10:00   HDMI 2 → 20:00   HDMI 3 → 30:00   HDMI 4 → 40:00
-# ---------------------------------------------------------------------------
-HDMI_ADDRESSES = {
-    1: "10:00",
-    2: "20:00",
-    3: "30:00",
-    4: "40:00",
-}
-
-
-def run_cec(command: str) -> str:
-    """
-    Send a single cec-client command in single-shot mode (-s) and return stdout.
-
-    Parameters
-    ----------
-    command : str
-        The cec-client command string, e.g. "on 0", "pow 0", "volup".
-
-    Returns
-    -------
-    str
-        stdout from cec-client, or empty string on timeout / error.
-
-    Notes
-    -----
-    -s  single-shot mode (run command then exit)
-    -d 1  log level 1 (errors only — suppresses verbose CEC bus traffic)
-    timeout=15  seconds; CEC initialisation alone can take 5-10 s on some TVs.
-    """
-    try:
-        result = subprocess.run(
-            ["cec-client", "-s", "-d", "1"],
-            input=command + "\n",
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        return result.stdout
-    except subprocess.TimeoutExpired:
-        return ""
-    except Exception:
-        return ""
-
-
-# ---------------------------------------------------------------------------
-# Power control
-# ---------------------------------------------------------------------------
-
-@app.route("/display/on", methods=["POST"])
-def display_on():
-    """Wake the display. CEC command: on 0  (broadcast to logical address 0 = TV)."""
-    output = run_cec("on 0")
-    if output is not None:
-        return jsonify({"success": True, "action": "on"})
-    return jsonify({"success": False, "error": "cec-client failed"}), 500
-
-
-@app.route("/display/off", methods=["POST"])
-def display_off():
-    """Put the display into standby. CEC command: standby 0."""
-    output = run_cec("standby 0")
-    if output is not None:
-        return jsonify({"success": True, "action": "off"})
-    return jsonify({"success": False, "error": "cec-client failed"}), 500
-
-
-@app.route("/display/status", methods=["GET"])
-def display_status():
-    """
-    Query the display power state.
-
-    CEC command: pow 0  (power status request to logical address 0 = TV).
-    Parses the response string for "power status: on" or "power status: standby".
-    """
-    output = run_cec("pow 0")
-    if not output:
-        return jsonify({"power_state": "error"})
-    if "power status: on" in output:
-        return jsonify({"power_state": "on"})
-    if "power status: standby" in output:
-        return jsonify({"power_state": "standby"})
-    return jsonify({"power_state": "unknown"})
-
-
-# ---------------------------------------------------------------------------
-# HDMI input switching
-# ---------------------------------------------------------------------------
-
-@app.route("/display/input/<int:number>", methods=["POST"])
-def display_input(number):
-    """
-    Switch the TV to a specific HDMI input using the CEC Active Source opcode (0x82).
-
-    The CEC tx command format is:
-        tx 1F:82:<high>:<low>
-    where 1F is the broadcast address, 82 is the Active Source opcode,
-    and <high>:<low> is the physical address of the HDMI port.
-
-    Parameters
-    ----------
-    number : int
-        HDMI port number, 1 through 4.
-    """
-    if number not in HDMI_ADDRESSES:
-        return jsonify({"success": False, "error": f"Invalid input {number}. Must be 1-4."}), 400
-    addr = HDMI_ADDRESSES[number]
-    output = run_cec(f"tx 1F:82:{addr}")
-    if output is not None:
-        return jsonify({"success": True, "action": f"input/{number}", "physical_address": addr})
-    return jsonify({"success": False, "error": "cec-client failed"}), 500
-
-
-# ---------------------------------------------------------------------------
-# Volume control
-# ---------------------------------------------------------------------------
-
-@app.route("/display/volume/up", methods=["POST"])
-def volume_up():
-    """Increase TV volume by one step. Uses the cec-client 'volup' shortcut."""
-    output = run_cec("volup")
-    if output is not None:
-        return jsonify({"success": True, "action": "volume/up"})
-    return jsonify({"success": False, "error": "cec-client failed"}), 500
-
-
-@app.route("/display/volume/down", methods=["POST"])
-def volume_down():
-    """Decrease TV volume by one step. Uses the cec-client 'voldown' shortcut."""
-    output = run_cec("voldown")
-    if output is not None:
-        return jsonify({"success": True, "action": "volume/down"})
-    return jsonify({"success": False, "error": "cec-client failed"}), 500
-
-
-@app.route("/display/volume/mute", methods=["POST"])
-def volume_mute():
-    """Toggle mute. Uses the cec-client 'mute' shortcut."""
-    output = run_cec("mute")
-    if output is not None:
-        return jsonify({"success": True, "action": "volume/mute"})
-    return jsonify({"success": False, "error": "cec-client failed"}), 500
-
-
-if __name__ == "__main__":
-    # Listen on all interfaces so Companion can reach it over the LAN
-    app.run(host="0.0.0.0", port=5000)
+```bash
+scp app.py stage-display@<PI_IP>:/home/stage-display/stage-display-cec/app.py
 ```
+
+The current `app.py` uses a **persistent `CecDaemon`** — see the [Stability Features](#stability-features) section for details.
 
 ---
 
@@ -488,22 +317,23 @@ All responses are `application/json`.
 
 ### `POST /display/on`
 
-Wakes the display. Internally runs: `echo "on 0" | cec-client -s -d 1`
+Wakes the display. Sends two CEC commands via the persistent daemon:
+1. `as` — Active Source (opcode `0x82`, broadcast): announces the Pi as the active source. LG SimpLink TVs with Auto Power Sync wake up on this alone.
+2. `on 0` — Image View On (opcode `0x04`): belt-and-braces wake for TVs without Auto Power Sync.
 
 **Success response — HTTP 200:**
 ```json
 { "success": true, "action": "on" }
-```
-**Error response — HTTP 500:**
-```json
-{ "success": false, "error": "cec-client failed" }
 ```
 
 ---
 
 ### `POST /display/off`
 
-Puts the display into standby. Internally runs: `echo "standby 0" | cec-client -s -d 1`
+Sends CEC Standby (opcode `0x36`) via the persistent daemon.
+
+> **⚠️ Known limitation — older LG TVs:** Some older LG SimpLink TVs (CEC version 1.3a) do not respond to the CEC Standby opcode from external devices. The command is transmitted and acknowledged on the bus, but the TV stays on. This is a firmware limitation of those TV models and cannot be worked around in software.
+> The `/display/on` endpoint works correctly on the same TVs.
 
 **Success response — HTTP 200:**
 ```json
@@ -514,7 +344,7 @@ Puts the display into standby. Internally runs: `echo "standby 0" | cec-client -
 
 ### `GET /display/status`
 
-Queries the current power state. Internally runs: `echo "pow 0" | cec-client -s -d 1`
+Queries the current power state via CEC Give Device Power Status (opcode `0x8F`).
 
 **Response — HTTP 200:**
 ```json
@@ -523,10 +353,10 @@ Queries the current power state. Internally runs: `echo "pow 0" | cec-client -s 
 
 | `power_state` | Meaning |
 |---------------|---------|
-| `on` | Display is powered on |
-| `standby` | Display is in standby |
-| `unknown` | CEC responded but state string was not recognised |
-| `error` | `cec-client` returned no output (bus error / not connected) |
+| `on` | Display is powered on and responding via CEC |
+| `standby` | Display explicitly reported standby over CEC |
+| `unknown` | CEC responded but the state string was not recognised. On older LG TVs this typically means the display is **off / in standby** (the TV does not reply to power queries when in standby, causing libCEC to report an unrecognised state). |
+| `error` | The persistent CEC daemon returned no output (adapter not connected or crashed) |
 
 ---
 
@@ -555,44 +385,64 @@ Switches the TV to the specified HDMI input using the CEC **Active Source** opco
 
 ### `POST /display/volume/up`
 
-Increases volume by one step. Internally runs: `echo "volup" | cec-client -s -d 1`
+Increases volume by one step. Sends CEC `volup` via the persistent daemon (User Control Pressed Volume Up + Released).
 
 **Success response — HTTP 200:**
 ```json
-{ "success": true, "action": "volume/up" }
+{ "success": true, "action": "volume_up" }
 ```
 
 ---
 
 ### `POST /display/volume/down`
 
-Decreases volume by one step. Internally runs: `echo "voldown" | cec-client -s -d 1`
+Decreases volume by one step. Sends CEC `voldown` via the persistent daemon (User Control Pressed Volume Down + Released).
 
 **Success response — HTTP 200:**
 ```json
-{ "success": true, "action": "volume/down" }
+{ "success": true, "action": "volume_down" }
 ```
 
 ---
 
 ### `POST /display/volume/mute`
 
-Toggles mute. Internally runs: `echo "mute" | cec-client -s -d 1`
+Toggles mute. Sends CEC `mute` via the persistent daemon (User Control Pressed Mute + Released).
 
 **Success response — HTTP 200:**
 ```json
-{ "success": true, "action": "volume/mute" }
+{ "success": true, "action": "volume_mute" }
 ```
 
 ---
 
 ## Stability Features
 
-The Companion module (`src/main.js`) includes several stability improvements to cope with the inherent slowness of HDMI-CEC and unreliable network conditions.
+### Persistent CEC Daemon (`CecDaemon` class in `app.py`)
+
+Every time `cec-client` starts it **negotiates a logical address on the CEC bus**. On LG SimpLink TVs with Auto Power Sync this negotiation is interpreted as "a device became active" and immediately wakes the TV — making it impossible to reliably send a standby command without re-waking the TV milliseconds later.
+
+`CecDaemon` solves this by launching `cec-client` **once at service startup** and keeping it running as a background process. All subsequent commands are written to its `stdin` — no new bus negotiation, no spurious wake signal.
+
+```
+Flask starts
+  └─ CecDaemon.__init__()
+       └─ subprocess.Popen(["cec-client", "-d", "1"])
+            └─ background reader thread drains stdout into _output[]
+            └─ time.sleep(5)  ← wait for bus negotiation to complete
+
+POST /display/on  ──► CecDaemon.send("as\non 0")   ← writes to existing stdin
+POST /display/off ──► CecDaemon.send("standby 0")  ← writes to existing stdin
+GET  /display/status ► CecDaemon.send("pow 0")     ← writes to existing stdin
+```
+
+If `cec-client` crashes, `_ensure_alive()` detects the dead process and restarts it before the next command.
+
+The Companion module (`src/main.js`) includes several additional stability improvements.
 
 ### Poll Guard (`_pollBusy` flag)
 
-`cec-client` can take 5–15 seconds to respond. Without a guard, `setInterval` would fire new polls before old ones complete, causing a build-up of concurrent HTTP requests that overwhelm the Pi.
+With the persistent CecDaemon, status polls typically return in **2–3 seconds**. Without a guard, `setInterval` could still fire a new poll before the previous one completes if the Pi or network is slow.
 
 A `_pollBusy` flag is set to `true` at the start of every poll and released in a `finally` block. If the interval fires while a poll is still in progress, the new poll is silently skipped.
 
@@ -643,10 +493,23 @@ The Companion server cannot reach the Pi. Check:
 
 ### `power_state` is always `unknown`
 
-CEC is running but the TV is not responding to the power query. Check:
+On **older LG TVs** (CEC 1.3a / SimpLink) this is **expected behaviour when the TV is off**. The TV does not reply to CEC power queries while in standby, so libCEC reports an unrecognised state. The Companion module treats `unknown` as equivalent to `standby` for feedback purposes.
+
+If you see `unknown` while the TV is **on**, check:
 1. HDMI cable is firmly connected between the Pi and the display.
-2. CEC is enabled in the display menu (SimpLink / Anynet+ / BRAVIA Sync).
+2. CEC / SimpLink is enabled in the TV's settings menu.
 3. Run `echo "scan" | cec-client -s -d 1` on the Pi — the display should appear in the scan output.
+
+### `Display Off` action has no effect on the TV
+
+Some older LG SimpLink TVs (CEC 1.3a) **ignore the CEC Standby opcode** (`0x36`) from external devices. The Pi correctly transmits the frame and it is acknowledged on the bus, but the TV's firmware does not act on it. This is a known hardware limitation of those TV models.
+
+**Workarounds:**
+- Use the TV's physical remote or power button.
+- Use an IR blaster if your setup supports it.
+- Use RS-232 control if the TV has a serial port.
+
+`Display On` works correctly on the same TVs via the Active Source broadcast (`0x82`).
 
 ### `cec-client` not found on the Pi
 

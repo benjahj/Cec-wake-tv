@@ -44,10 +44,12 @@ Before adding this module, make sure the following are in place:
 
 ### Power Control
 
-| Action | CEC Command | Description |
+| Action | CEC Commands | Description |
 |--------|-------------|-------------|
-| **Display On** | `on 0` | Wakes the display from standby |
-| **Display Off** | `standby 0` | Puts the display into standby (low-power) mode |
+| **Display On** | `as` → `on 0` | Wakes the display from standby. Sends an Active Source broadcast first (opcode `0x82`), then Image View On (opcode `0x04`). LG SimpLink TVs wake on the Active Source alone. |
+| **Display Off** | `standby 0` | Sends CEC Standby (opcode `0x36`). ⚠️ See note below. |
+
+> **⚠️ Known limitation — older LG TVs:** Some older LG SimpLink TVs (CEC version 1.3a) **do not respond** to the CEC Standby command from external devices. The command is transmitted correctly, but the TV ignores it. This is a firmware limitation and cannot be worked around in software. Use the physical remote or an IR blaster to turn the TV off.
 
 ### HDMI Input Switching
 
@@ -72,7 +74,7 @@ The CEC Active Source message tells the TV which physical HDMI port is now the a
 | **Volume Down** | `voldown` | Decreases TV volume by one step |
 | **Volume Mute / Unmute** | `mute` | Toggles mute on/off |
 
-> **Note on timing:** CEC commands are inherently slow — `cec-client` can take 5–15 seconds to complete because it initialises the CEC bus on every call. This is normal behaviour. The module uses a 15-second HTTP timeout for commands and will not show an error unless 3 consecutive polls fail.
+> **Note on timing:** The bridge uses a persistent `cec-client` daemon — commands no longer require a full CEC bus re-initialisation. Most commands return within **2–4 seconds**. The module uses a 15-second HTTP timeout for safety and will not show an error unless 3 consecutive polls fail.
 
 ---
 
@@ -100,8 +102,8 @@ The variable is updated every **10 seconds** by polling the Pi bridge's `/displa
 | Value | Meaning |
 |-------|---------|
 | `on` | Display is powered on and responding via CEC |
-| `standby` | Display is in standby mode |
-| `unknown` | CEC bus responded, but the power state string was not recognised |
+| `standby` | Display explicitly reported standby over CEC |
+| `unknown` | CEC bus responded, but the power state string was not recognised. **On older LG TVs this is normal when the display is off** — the TV does not reply to power queries in standby. Treat `unknown` as "off / standby". |
 | `error` | Pi bridge is unreachable (shown after 3 consecutive failed polls ≈ 30 seconds) |
 
 ---
@@ -124,11 +126,14 @@ The variable is updated every **10 seconds** by polling the Pi bridge's `/displa
 → Check the port — default is `5000`. Make sure no firewall is blocking it.
 
 **`power_state` stays `unknown`**
-→ CEC is working but the TV is not answering the power query. Ensure CEC is enabled in the display menu and the HDMI cable is firmly connected.
+→ On older LG TVs this is **expected when the display is off**. The TV does not reply to CEC power queries in standby; `unknown` effectively means "off". If the TV is visibly on and you still see `unknown`, check that SimpLink is enabled in the TV menu and the HDMI cable is firmly connected.
+
+**`Display Off` action has no effect**
+→ Some older LG SimpLink TVs ignore the CEC Standby command. This is a firmware limitation. Use the TV's remote or an IR blaster to power it off.
 
 **Actions do nothing**
-→ CEC commands can take up to 15 seconds. Wait and check the Companion log for any error messages.
-→ Verify the action works from the Pi directly: `echo "on 0" | cec-client -s -d 1`
+→ Commands now typically complete in 2–4 seconds. If an action has no effect after 10 seconds, check the Companion log for errors.
+→ Verify the service is running on the Pi: `sudo systemctl status stage-display-cec`
 
 **HDMI input switching doesn't work**
 → Some TVs ignore the Active Source CEC message when they are in standby. Try sending **Display On** first, then switching the input.
