@@ -189,8 +189,27 @@ def display_status():
 def display_input(number):
     """Switch the TV to a specific HDMI input using CEC Active Source.
 
-    CEC command: tx 1F:82:<physical-address>
-      Opcode 0x82 = Active Source, broadcast to all devices (1F).
+    Two bugs existed in the naive implementation:
+      1. The TV must be ON before it responds to Active Source messages.
+         Sending only the Active Source while the TV is in standby (or
+         showing power_state 'unknown' on older LG) is silently ignored.
+         Fix: always send 'on 0' (Image View On) first.
+      2. For the Pi's own HDMI port (the port cec-client is registered on)
+         the correct command is the built-in 'as' (Active Source), which
+         uses the Pi's actual registered physical address on the CEC bus.
+         Using 'tx 1F:82:20:00' from the Pi while the Pi IS at 2.0.0.0
+         sends an Active Source with the WRONG initiator logical address
+         (libcec may or may not correct this), so 'as' is more reliable
+         for the Pi's own port.
+      For inputs that are NOT the Pi's own port we still use the raw
+      'tx 1F:82:<addr>' Active Source broadcast. Whether the TV honours
+      this for inputs with no registered CEC device depends on the TV
+      firmware. On older LG SimpLink TVs (CEC 1.3a) it may be ignored.
+
+    CEC sequence:
+      on 0          — Image View On (0x04): wakes the TV from standby.
+      as            — Active Source (0x82): switches to Pi's own input.
+      tx 1F:82:XX:XX— Active Source broadcast for a different input.
 
     Args:
         number (int): HDMI input number, 1–4.
@@ -202,7 +221,22 @@ def display_input(number):
     if number not in HDMI_ADDRESSES:
         abort(400, description="Invalid input. Must be 1-4.")
     addr = HDMI_ADDRESSES[number]
-    _cec.send("tx 1F:82:" + addr)
+
+    # Determine whether this is the Pi's own HDMI port.
+    # The Pi is registered on the CEC bus with its physical address
+    # (e.g. 2.0.0.0 when connected to HDMI 2 of the TV).  The 'as'
+    # command uses that registered address directly — more reliable than
+    # a raw 'tx' frame that may carry a mismatched initiator address.
+    pi_own_port = 2   # adjust if the Pi is physically on a different port
+    if number == pi_own_port:
+        # Wake TV first, then announce Pi as active source on its own port.
+        _cec.send("on 0\nas", wait=3.5)
+    else:
+        # Wake TV first, then broadcast Active Source for the target input.
+        # Note: on older LG SimpLink TVs this may be ignored if no CEC
+        # device is registered at that physical address.
+        _cec.send("on 0\ntx 1F:82:" + addr, wait=3.5)
+
     return jsonify({"success": True, "action": "input", "input": number})
 
 
